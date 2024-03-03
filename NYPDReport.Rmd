@@ -1,0 +1,208 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# NYPD Report
+
+## Library
+
+For this report we will need the tidyverse, lubridate and ggplot2 libraries. 
+
+```{r message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+```
+
+## Getting the data
+
+First, let's download the data from the original source.
+
+``` {r}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+download.file(url, "data/nypd_data.csv", mode = "wb")
+```
+
+Then let's import the data.
+
+```{r}
+nypd_data = read_csv("data/nypd_data.csv")
+```
+
+## Transforming Data
+
+That data has been transformed in the following ways:
+
+- Only columns of interest for this particular analysis have been kept.
+- The OCCUR_DATE variable is changed to a date variable.
+- The following variables have been set as factors and cleaning if necessary was performed before the transformation:
+    - BORO
+    - PRECINT
+    - JURISDICTION_CODE
+    - PERP_AGE_GROUP
+    - PERP_SEX
+    - PERP_RACE
+    - VIC_AGE_GROUP
+    - VIC_SEX
+    - VIC_RACE
+  
+```{r}
+nypd_data = nypd_data |> select(OCCUR_DATE, OCCUR_TIME, BORO, PRECINCT, JURISDICTION_CODE, STATISTICAL_MURDER_FLAG, PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE)
+
+nypd_data = nypd_data |> mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+nypd_data$BORO = as.factor(nypd_data$BORO)
+nypd_data$PRECINCT = as.factor(nypd_data$PRECINCT)
+
+nypd_data$JURISDICTION_CODE[nypd_data$JURISDICTION_CODE == 0] = "PATROL"
+nypd_data$JURISDICTION_CODE[nypd_data$JURISDICTION_CODE == 1] = "TRANSIT"
+nypd_data$JURISDICTION_CODE[nypd_data$JURISDICTION_CODE == 2] = "HOUSING"
+nypd_data$JURISDICTION_CODE = as.factor(nypd_data$JURISDICTION_CODE)
+
+nypd_data$PERP_AGE_GROUP[is.na(nypd_data$PERP_AGE_GROUP)] = "UNKNOWN"
+nypd_data$PERP_AGE_GROUP[nypd_data$PERP_AGE_GROUP == "(null)"] = "UNKNOWN"
+nypd_data$PERP_AGE_GROUP[nypd_data$PERP_AGE_GROUP == "1020"] = "UNKNOWN"
+nypd_data$PERP_AGE_GROUP[nypd_data$PERP_AGE_GROUP == "224"] = "UNKNOWN"
+nypd_data$PERP_AGE_GROUP[nypd_data$PERP_AGE_GROUP == "940"] = "UNKNOWN"
+nypd_data$PERP_AGE_GROUP = as.factor(nypd_data$PERP_AGE_GROUP)
+
+nypd_data$PERP_SEX[is.na(nypd_data$PERP_SEX)] = "UNKNOWN"
+nypd_data$PERP_SEX[nypd_data$PERP_SEX == "(null)"] = "UNKNOWN"
+nypd_data$PERP_SEX = as.factor(nypd_data$PERP_SEX)
+
+nypd_data$PERP_RACE[is.na(nypd_data$PERP_RACE)] = "UNKNOWN"
+nypd_data$PERP_RACE[nypd_data$PERP_RACE == "(null)"] = "UNKNOWN"
+nypd_data$PERP_RACE = as.factor(nypd_data$PERP_RACE)
+
+nypd_data$VIC_AGE_GROUP[nypd_data$VIC_AGE_GROUP == "1022"] = "UNKNOWN"
+nypd_data$VIC_AGE_GROUP = as.factor(nypd_data$VIC_AGE_GROUP)
+
+nypd_data$VIC_SEX = as.factor(nypd_data$VIC_SEX)
+nypd_data$VIC_RACE = as.factor(nypd_data$VIC_RACE)
+```
+
+Finally, only two rows remains that are NA's in the dataset. We get rid of them before continuing with the analysis.
+
+```{r}
+size_sum(nypd_data)
+nypd_data = drop_na(nypd_data)
+size_sum(nypd_data)
+```
+
+Let's see a summary of the data to check if we need to perform more cleaning.
+
+```{r}
+summary(nypd_data)
+```
+
+The dataset seems tidy and NA's have been dealt with. We can proceed with the analysis.
+
+## Analyzing Data
+
+### Shooting Incidents Trend
+
+Let's investigate trends in shooting incidents and in particular if they have been increasing or decreasing over time.
+
+```{r}
+nypd_data$OCCUR_YEAR = year(ymd(nypd_data$OCCUR_DATE))
+yearly_nypd_data = nypd_data |> count(OCCUR_YEAR, name = "COUNT_PER_YEAR")
+ggplot(yearly_nypd_data, aes(x = OCCUR_YEAR, y = COUNT_PER_YEAR)) + 
+  geom_line() +
+  geom_point()
+```
+
+Somehow after a period of decline it seems that shooting incidents have been more prominent lately. Let's see if this trend can be seen in every borough. 
+
+```{r}
+yearly_boro_nypd_data = nypd_data |> group_by(OCCUR_YEAR, BORO) |> count(OCCUR_YEAR, name = "COUNT_PER_YEAR")
+plt_occurence = ggplot(yearly_boro_nypd_data, aes(x = OCCUR_YEAR, y = COUNT_PER_YEAR)) + 
+  geom_line() +
+  geom_point()
+plt_occurence + facet_wrap(~ BORO, nrow = 1)
+```
+
+Except for Staten Islands where shooting incidents are globally very low we can see that the trend is the similar in every borough.
+
+### Investigating Victims of Shooting Incidents
+
+#### Sex
+
+PLotting shooting incidents by sex for every borough.
+
+```{r}
+tmp = nypd_data |> select(OCCUR_YEAR, BORO, VIC_SEX) |> group_by(OCCUR_YEAR, BORO, VIC_SEX) |> count(OCCUR_YEAR, name = "COUNT")
+plot_sex = ggplot(tmp, aes(x = OCCUR_YEAR, y = COUNT, colour = VIC_SEX)) + 
+  geom_line() +
+  geom_point()
+plot_sex + facet_wrap(~ BORO, nrow = 1)
+```
+
+#### Race
+
+PLotting shooting incidents by race for every borough.
+
+```{r}
+tmp = nypd_data |> select(OCCUR_YEAR, BORO, VIC_RACE) |> group_by(OCCUR_YEAR, BORO, VIC_RACE) |> count(OCCUR_YEAR, name = "COUNT")
+plot_race = ggplot(tmp, aes(x = OCCUR_YEAR, y = COUNT, colour = VIC_RACE)) + 
+  geom_line() +
+  geom_point()
+plot_race + facet_wrap(~ BORO, nrow = 1)
+```
+
+#### Age Group
+
+Plotting shooting incidents by age group for every borough.
+
+```{r}
+tmp = nypd_data |> select(OCCUR_YEAR, BORO, VIC_AGE_GROUP) |> group_by(OCCUR_YEAR, BORO, VIC_AGE_GROUP) |> count(OCCUR_YEAR, name = "COUNT")
+plot_age_group = ggplot(tmp, aes(x = OCCUR_YEAR, y = COUNT, colour = VIC_AGE_GROUP)) + 
+  geom_line() +
+  geom_point()
+plot_age_group + facet_wrap(~ BORO, nrow = 1)
+```
+
+### Investigating the time of incidents
+
+```{r}
+nypd_data$HOUR = as.factor(hour(nypd_data$OCCUR_TIME))
+summary(nypd_data$HOUR)
+```
+
+```{r}
+ggplot(nypd_data, aes(x = HOUR, colour = STATISTICAL_MURDER_FLAG)) + 
+  geom_bar()
+
+```
+
+## Model
+
+Building a logistic regression model with to investigate the murder response variable. 
+
+```{r}
+model <- glm(STATISTICAL_MURDER_FLAG ~.,family = binomial, data = nypd_data)
+summary(model)
+```
+
+## Conclusion
+
+The data from New York Shooting incidents indicates that there is a current resurgence of shooting incidents after a period of decline. 
+
+We can see that the trend is similar in every borough although the amount of shooting incidents can vary greatly from one borough to another. 
+
+The investigation of the victims variables points to a specific demographic. Indeed the majority of the victims are black males between 18 and 44. Further investigation would be required to understand what are the possible reasons for this specific population to being more prone to be victims of shooting incidents.
+
+Shooting incidents and murders also show a pattern of occurrence based on the time of the day with a peak between 22:00 and 02:00.
+
+Finally a logistic regression model was built with all the available variables and with STATISTICAL_MURDER_FLAG as the dependent variable to evaluate if there is is any statistically significant dependancy between the variable in the data set and the occurence of murder.
+
+### bias disclaimer
+
+I've tried to avoid personal bias as much as possible by transforming and examining variables in a methodical way. Also I've tried to avoid confirmation bias by investigating the data with an open mind trying to avoid jumping to conclusions and letting the data speak for itself. However bias is difficult to avoid entirely and might even have been inserted in the data set itself before the analysis occurs. This could have happened while the data was recorded or when it was extracted to be made available to the general public. 
+
+
+## Session Info 
+
+```{r}
+sessionInfo()
+```
