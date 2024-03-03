@@ -22,13 +22,13 @@ First, let's download the data from the original source.
 
 ``` {r}
 url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
-download.file(url, "data/nypd_data.csv", mode = "wb")
+download.file(url, "nypd_data.csv", mode = "wb")
 ```
 
 Then let's import the data.
 
 ```{r}
-nypd_data = read_csv("data/nypd_data.csv")
+nypd_data = read_csv("nypd_data.csv")
 ```
 
 ## Transforming Data
